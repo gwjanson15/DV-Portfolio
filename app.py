@@ -252,19 +252,24 @@ def run_backtest(capital, start_date, end_date, rebalance_freq="quarterly"):
 # FLASK APP
 # ──────────────────────────────────────────────────────────────
 
-app = Flask(__name__, static_folder="static")
+import pathlib
+
+BASE_DIR = pathlib.Path(__file__).resolve().parent
+STATIC_DIR = BASE_DIR / "static"
+
+app = Flask(__name__, static_folder=str(STATIC_DIR))
 CORS(app)
 
 
 @app.route("/healthz")
 def healthz():
     """Lightweight healthcheck for Railway / load balancers."""
-    return jsonify({"status": "ok", "holdings": len(TOP_15)}), 200
+    return jsonify({"status": "ok", "holdings": len(TOP_15), "static_dir_exists": STATIC_DIR.is_dir()}), 200
 
 
 @app.route("/")
 def index():
-    return send_from_directory("static", "index.html")
+    return send_from_directory(str(STATIC_DIR), "index.html")
 
 
 @app.route("/api/holdings")
