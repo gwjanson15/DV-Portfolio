@@ -777,10 +777,10 @@ function getEmbeddedHoldings() {
     {ticker:"FLYW",name:"Flywire Corporation",value_k:81936,weight:0},
     {ticker:"BBW",name:"Build-A-Bear Workshop Inc",value_k:76662,weight:0},
     {ticker:"SEZL",name:"Sezzle Inc",value_k:71297,weight:0},
-    {ticker:"APEI",name:"American Public Education Inc",value_k:63185,weight:0},
     {ticker:"TPB",name:"Turning Point Brands Inc",value_k:57584,weight:0},
     {ticker:"CLS",name:"Celestica Inc",value_k:51735,weight:0},
     {ticker:"FIGS",name:"FIGS Inc",value_k:50105,weight:0},
+    {ticker:"REAL",name:"The RealReal Inc",value_k:49714,weight:0},
   ];
   const total = holdings.reduce((s,h) => s + h.value_k, 0);
   holdings.forEach(h => h.weight = h.value_k / total);
