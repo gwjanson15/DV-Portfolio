@@ -267,9 +267,64 @@ def healthz():
     return jsonify({"status": "ok", "holdings": len(TOP_15), "static_dir_exists": STATIC_DIR.is_dir()}), 200
 
 
+@app.route("/debug")
+def debug():
+    """Debug endpoint to diagnose file paths on Railway."""
+    import os
+    cwd = os.getcwd()
+    base = str(BASE_DIR)
+    static = str(STATIC_DIR)
+    static_exists = STATIC_DIR.is_dir()
+    index_exists = (STATIC_DIR / "index.html").is_file()
+
+    # List files in base dir
+    try:
+        base_files = os.listdir(BASE_DIR)
+    except Exception as e:
+        base_files = str(e)
+
+    # List files in static dir
+    try:
+        static_files = os.listdir(STATIC_DIR) if static_exists else "DIR NOT FOUND"
+    except Exception as e:
+        static_files = str(e)
+
+    # Also check cwd
+    try:
+        cwd_files = os.listdir(cwd)
+    except Exception as e:
+        cwd_files = str(e)
+
+    return jsonify({
+        "cwd": cwd,
+        "base_dir": base,
+        "static_dir": static,
+        "static_dir_exists": static_exists,
+        "index_html_exists": index_exists,
+        "base_dir_files": base_files,
+        "static_dir_files": static_files,
+        "cwd_files": cwd_files,
+    })
+
+
 @app.route("/")
 def index():
-    return send_from_directory(str(STATIC_DIR), "index.html")
+    index_file = STATIC_DIR / "index.html"
+    if index_file.is_file():
+        return send_from_directory(str(STATIC_DIR), "index.html")
+    else:
+        # Fallback: try cwd/static
+        import os
+        cwd_static = os.path.join(os.getcwd(), "static")
+        cwd_index = os.path.join(cwd_static, "index.html")
+        if os.path.isfile(cwd_index):
+            return send_from_directory(cwd_static, "index.html")
+        # Last resort: return diagnostic info
+        return jsonify({
+            "error": "index.html not found",
+            "tried": [str(index_file), cwd_index],
+            "hint": "Visit /debug for full path diagnostics",
+        }), 404
 
 
 @app.route("/api/holdings")
