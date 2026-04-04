@@ -395,6 +395,4 @@ def alpaca_config():
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8080))
-    # Bind to :: (IPv6 all interfaces) which also accepts IPv4
-    # via dual-stack on Linux — required for Railway private network
-    app.run(host="::", port=port, debug=False)
+    app.run(host="0.0.0.0", port=port, debug=False)
