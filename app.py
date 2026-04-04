@@ -21,23 +21,24 @@ from flask import Flask, jsonify, request, send_from_directory
 from flask_cors import CORS
 
 # ──────────────────────────────────────────────────────────────
-# 13F DATA – Q4 2025 filing (period: 2025-12-31)
-# Source: SEC EDGAR, CIK 0001901865
-# Values in $000s from the XML. Where a name appears twice
-# (shares + calls), we combine into a single "effective" position
-# to keep the lookalike equity-only.
+# 13F DATA — AUTO-UPDATED FROM SEC EDGAR
+# On startup, attempts to fetch the latest 13F filing live.
+# Falls back to hardcoded Q4 2025 data if SEC is unreachable.
 # ──────────────────────────────────────────────────────────────
 
-RAW_HOLDINGS = [
-    # Combined shares + calls where applicable
-    {"ticker": "SGHC", "name": "Super Group (SGHC) Limited",       "value_k": 288336},  # 140312 + 148024
-    {"ticker": "DAVE", "name": "Dave Inc",                          "value_k": 218467},  # 57923 + 160544
-    {"ticker": "CELH", "name": "Celsius Holdings Inc",              "value_k": 115732},  # 74108 + 41624
+# Tickers to always exclude from the lookalike portfolio
+EXCLUDED_TICKERS = {"APEI"}
+
+# Hardcoded fallback (Q4 2025 filing, period: 2025-12-31)
+FALLBACK_HOLDINGS = [
+    {"ticker": "SGHC", "name": "Super Group (SGHC) Limited",       "value_k": 288336},
+    {"ticker": "DAVE", "name": "Dave Inc",                          "value_k": 218467},
+    {"ticker": "CELH", "name": "Celsius Holdings Inc",              "value_k": 115732},
     {"ticker": "INDV", "name": "Indivior PLC",                      "value_k": 99918},
     {"ticker": "AS",   "name": "Amer Sports Inc",                   "value_k": 93033},
     {"ticker": "CVNA", "name": "Carvana Co",                        "value_k": 92080},
     {"ticker": "SN",   "name": "SharkNinja Inc",                    "value_k": 86069},
-    {"ticker": "RSI",  "name": "Rush Street Interactive Inc",       "value_k": 85711},   # 54427 + 31284
+    {"ticker": "RSI",  "name": "Rush Street Interactive Inc",       "value_k": 85711},
     {"ticker": "FLYW", "name": "Flywire Corporation",               "value_k": 81936},
     {"ticker": "BBW",  "name": "Build-A-Bear Workshop Inc",         "value_k": 76662},
     {"ticker": "SEZL", "name": "Sezzle Inc",                        "value_k": 71297},
@@ -62,9 +63,34 @@ RAW_HOLDINGS = [
     {"ticker": "COMP", "name": "Compass Inc",                       "value_k": 13213},
 ]
 
-# Sort by value descending, take top 15
+# ── Try live SEC data, fall back to hardcoded ────────────────
+DATA_SOURCE = "hardcoded_q4_2025"
+FILING_DATE = "2026-02-17"
+
+def _init_holdings():
+    """Attempt to load live 13F data from SEC EDGAR."""
+    global RAW_HOLDINGS, DATA_SOURCE, FILING_DATE
+    try:
+        from sec_updater import fetch_and_parse_holdings
+        live = fetch_and_parse_holdings()
+        if live and live.get("holdings"):
+            RAW_HOLDINGS = live["holdings"]
+            DATA_SOURCE = live.get("source", "sec_edgar_live")
+            FILING_DATE = live.get("filing_date", FILING_DATE)
+            print(f"[Holdings] Loaded live data: {len(RAW_HOLDINGS)} holdings, filed {FILING_DATE}")
+            return
+    except Exception as e:
+        print(f"[Holdings] Live fetch failed ({e}), using fallback")
+
+    RAW_HOLDINGS = FALLBACK_HOLDINGS[:]
+    print(f"[Holdings] Using hardcoded Q4 2025 fallback data")
+
+_init_holdings()
+
+# Sort, exclude, take top 15
 RAW_HOLDINGS.sort(key=lambda h: h["value_k"], reverse=True)
-TOP_15 = RAW_HOLDINGS[:15]
+ELIGIBLE = [h for h in RAW_HOLDINGS if h["ticker"] not in EXCLUDED_TICKERS]
+TOP_15 = ELIGIBLE[:15]
 
 # Compute weights
 TOTAL_TOP15_VALUE = sum(h["value_k"] for h in TOP_15)
@@ -92,7 +118,7 @@ TICKER_PARAMS = {
     "SGHC": (0.35, 0.45), "DAVE": (0.80, 0.75), "CELH": (0.15, 0.55),
     "INDV": (0.10, 0.50), "AS":   (0.25, 0.40), "CVNA": (0.60, 0.70),
     "SN":   (0.30, 0.35), "RSI":  (0.40, 0.50), "FLYW": (0.12, 0.45),
-    "BBW":  (0.20, 0.40), "SEZL": (0.90, 0.80), "APEI": (0.25, 0.35),
+    "BBW":  (0.20, 0.40), "SEZL": (0.90, 0.80), "REAL": (0.30, 0.60),
     "TPB":  (0.18, 0.30), "CLS":  (0.45, 0.50), "FIGS": (-0.05, 0.55),
 }
 
@@ -255,7 +281,12 @@ def run_backtest(capital, start_date, end_date, rebalance_freq="quarterly"):
 import pathlib
 
 BASE_DIR = pathlib.Path(__file__).resolve().parent
-STATIC_DIR = BASE_DIR / "static"
+
+# Support both layouts: static/index.html (local dev) and index.html at root (flat deploy)
+if (BASE_DIR / "static" / "index.html").is_file():
+    STATIC_DIR = BASE_DIR / "static"
+else:
+    STATIC_DIR = BASE_DIR
 
 app = Flask(__name__, static_folder=str(STATIC_DIR))
 CORS(app)
@@ -264,67 +295,12 @@ CORS(app)
 @app.route("/healthz")
 def healthz():
     """Lightweight healthcheck for Railway / load balancers."""
-    return jsonify({"status": "ok", "holdings": len(TOP_15), "static_dir_exists": STATIC_DIR.is_dir()}), 200
-
-
-@app.route("/debug")
-def debug():
-    """Debug endpoint to diagnose file paths on Railway."""
-    import os
-    cwd = os.getcwd()
-    base = str(BASE_DIR)
-    static = str(STATIC_DIR)
-    static_exists = STATIC_DIR.is_dir()
-    index_exists = (STATIC_DIR / "index.html").is_file()
-
-    # List files in base dir
-    try:
-        base_files = os.listdir(BASE_DIR)
-    except Exception as e:
-        base_files = str(e)
-
-    # List files in static dir
-    try:
-        static_files = os.listdir(STATIC_DIR) if static_exists else "DIR NOT FOUND"
-    except Exception as e:
-        static_files = str(e)
-
-    # Also check cwd
-    try:
-        cwd_files = os.listdir(cwd)
-    except Exception as e:
-        cwd_files = str(e)
-
-    return jsonify({
-        "cwd": cwd,
-        "base_dir": base,
-        "static_dir": static,
-        "static_dir_exists": static_exists,
-        "index_html_exists": index_exists,
-        "base_dir_files": base_files,
-        "static_dir_files": static_files,
-        "cwd_files": cwd_files,
-    })
+    return jsonify({"status": "ok", "holdings": len(TOP_15)}), 200
 
 
 @app.route("/")
 def index():
-    index_file = STATIC_DIR / "index.html"
-    if index_file.is_file():
-        return send_from_directory(str(STATIC_DIR), "index.html")
-    else:
-        # Fallback: try cwd/static
-        import os
-        cwd_static = os.path.join(os.getcwd(), "static")
-        cwd_index = os.path.join(cwd_static, "index.html")
-        if os.path.isfile(cwd_index):
-            return send_from_directory(cwd_static, "index.html")
-        # Last resort: return diagnostic info
-        return jsonify({
-            "error": "index.html not found",
-            "tried": [str(index_file), cwd_index],
-            "hint": "Visit /debug for full path diagnostics",
-        }), 404
+    return send_from_directory(str(STATIC_DIR), "index.html")
 
 
 @app.route("/api/holdings")
@@ -332,13 +308,42 @@ def get_holdings():
     """Return the top-15 holdings with weights."""
     return jsonify({
         "fund_name": "Divisadero Street Capital Management, LP",
-        "filing_period": "Q4 2025 (2025-12-31)",
+        "filing_date": FILING_DATE,
+        "data_source": DATA_SOURCE,
         "cik": "0001901865",
         "total_13f_value_k": sum(h["value_k"] for h in RAW_HOLDINGS),
         "top15_value_k": TOTAL_TOP15_VALUE,
         "top15_pct_of_total": round(TOTAL_TOP15_VALUE / sum(h["value_k"] for h in RAW_HOLDINGS) * 100, 2),
+        "excluded_tickers": list(EXCLUDED_TICKERS),
         "holdings": TOP_15,
     })
+
+
+@app.route("/api/refresh-holdings", methods=["POST"])
+def refresh_holdings():
+    """Force a re-fetch of 13F data from SEC EDGAR."""
+    global RAW_HOLDINGS, TOP_15, TOTAL_TOP15_VALUE, ELIGIBLE, DATA_SOURCE, FILING_DATE
+    try:
+        from sec_updater import fetch_and_parse_holdings, CACHE_FILE
+        # Clear cache to force fresh fetch
+        if CACHE_FILE.exists():
+            CACHE_FILE.unlink()
+        live = fetch_and_parse_holdings()
+        if live and live.get("holdings"):
+            RAW_HOLDINGS = live["holdings"]
+            DATA_SOURCE = live.get("source", "sec_edgar_live")
+            FILING_DATE = live.get("filing_date", FILING_DATE)
+            RAW_HOLDINGS.sort(key=lambda h: h["value_k"], reverse=True)
+            ELIGIBLE = [h for h in RAW_HOLDINGS if h["ticker"] not in EXCLUDED_TICKERS]
+            TOP_15 = ELIGIBLE[:15]
+            TOTAL_TOP15_VALUE = sum(h["value_k"] for h in TOP_15)
+            for h in TOP_15:
+                h["weight"] = round(h["value_k"] / TOTAL_TOP15_VALUE, 6)
+            return jsonify({"status": "refreshed", "source": DATA_SOURCE, "filing_date": FILING_DATE, "holdings_count": len(TOP_15)})
+        else:
+            return jsonify({"status": "failed", "reason": "No data returned from SEC"}), 502
+    except Exception as e:
+        return jsonify({"status": "error", "reason": str(e)}), 500
 
 
 @app.route("/api/allocate")
