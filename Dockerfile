@@ -11,5 +11,7 @@ ENV PORT=8080
 
 EXPOSE ${PORT}
 
-# Railway injects $PORT at runtime — shell form ensures variable expansion
-CMD gunicorn app:app --bind 0.0.0.0:${PORT} --workers 2 --timeout 120
+# Railway private network requires IPv6 (::) binding.
+# Bind to [::]:PORT which accepts BOTH IPv6 and IPv4 connections
+# via IPv4-mapped addresses on Linux (dual-stack).
+CMD gunicorn app:app --bind "[::]:${PORT}" --workers 2 --timeout 120
