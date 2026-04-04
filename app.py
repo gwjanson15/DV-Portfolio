@@ -256,6 +256,12 @@ app = Flask(__name__, static_folder="static")
 CORS(app)
 
 
+@app.route("/healthz")
+def healthz():
+    """Lightweight healthcheck for Railway / load balancers."""
+    return jsonify({"status": "ok", "holdings": len(TOP_15)}), 200
+
+
 @app.route("/")
 def index():
     return send_from_directory("static", "index.html")
