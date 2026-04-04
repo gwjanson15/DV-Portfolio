@@ -435,27 +435,158 @@ def alpaca_config():
             "ALPACA_API_KEY",
             "ALPACA_SECRET_KEY",
             "ALPACA_BASE_URL (https://paper-api.alpaca.markets for paper trading)",
+            "DEPLOY_CAPITAL (dollar amount to invest)",
         ],
-        "endpoints_used": [
-            "GET /v2/account",
-            "GET /v2/positions",
-            "POST /v2/orders",
-            "GET /v2/orders",
-        ],
-        "order_template": {
-            "symbol": "TICKER",
-            "qty": "SHARES",
-            "side": "buy|sell",
-            "type": "market",
-            "time_in_force": "day",
-        },
         "rebalance_cron": "0 10 1 1,4,7,10 * (1st of Jan/Apr/Jul/Oct at 10am ET)",
-        "safety": {
-            "max_single_order_pct": 15,
-            "require_confirmation": True,
-            "paper_trade_first": True,
-        },
     })
+
+
+# ── Live Trading Endpoints ──────────────────────────────────
+
+@app.route("/api/trading/status")
+def trading_status():
+    """Check Alpaca connection and portfolio state."""
+    try:
+        from alpaca_trader import AlpacaTrader
+        trader = AlpacaTrader()
+        if not trader.is_configured:
+            return jsonify({"connected": False, "reason": "API keys not set"})
+        account = trader.get_account()
+        positions = trader.get_positions()
+        return jsonify({
+            "connected": True,
+            "mode": "paper" if "paper" in trader.base_url else "live",
+            "equity": float(account.get("equity", 0)),
+            "buying_power": float(account.get("buying_power", 0)),
+            "positions_count": len(positions),
+            "portfolio_empty": len(positions) == 0,
+            "market_open": trader.is_market_open(),
+        })
+    except Exception as e:
+        return jsonify({"connected": False, "reason": str(e)}), 500
+
+
+@app.route("/api/trading/preview", methods=["POST"])
+def trading_preview():
+    """
+    Preview what trades would be executed (dry run).
+    Detects empty portfolio → initial deployment, else → rebalance.
+    Body: {"capital": 50000}  (optional)
+    """
+    try:
+        from alpaca_trader import AlpacaTrader
+        trader = AlpacaTrader()
+        if not trader.is_configured:
+            return jsonify({"error": "Alpaca not configured"}), 400
+
+        data = request.get_json(silent=True) or {}
+        capital = data.get("capital") or float(os.environ.get("DEPLOY_CAPITAL", 0)) or None
+
+        weights = {h["ticker"]: h["weight"] for h in TOP_15}
+        result = trader.sync_portfolio(weights, capital=capital, dry_run=True)
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/trading/execute", methods=["POST"])
+def trading_execute():
+    """
+    Execute trades for real (paper or live depending on ALPACA_BASE_URL).
+    Detects empty portfolio → initial deployment, else → rebalance.
+    Body: {"capital": 50000, "confirm": true}
+    """
+    try:
+        from alpaca_trader import AlpacaTrader
+        trader = AlpacaTrader()
+        if not trader.is_configured:
+            return jsonify({"error": "Alpaca not configured"}), 400
+
+        data = request.get_json(silent=True) or {}
+        if not data.get("confirm"):
+            return jsonify({"error": "Set confirm: true to execute trades"}), 400
+
+        capital = data.get("capital") or float(os.environ.get("DEPLOY_CAPITAL", 0)) or None
+
+        weights = {h["ticker"]: h["weight"] for h in TOP_15}
+        result = trader.sync_portfolio(weights, capital=capital, dry_run=False)
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/trading/positions")
+def trading_positions():
+    """Get current Alpaca positions with weights."""
+    try:
+        from alpaca_trader import AlpacaTrader
+        trader = AlpacaTrader()
+        if not trader.is_configured:
+            return jsonify({"error": "Alpaca not configured"}), 400
+        return jsonify(trader.get_portfolio_summary())
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+# ── Auto-Deploy on Startup ───────────────────────────────────
+
+def _auto_deploy_on_startup():
+    """
+    If AUTO_TRADE=true and Alpaca is configured, automatically
+    sync the portfolio on app startup:
+      - Empty account → deploys full initial portfolio
+      - Existing positions → skips (waits for quarterly rebalance)
+
+    Set these env vars in Railway:
+      ALPACA_API_KEY=...
+      ALPACA_SECRET_KEY=...
+      ALPACA_BASE_URL=https://paper-api.alpaca.markets
+      DEPLOY_CAPITAL=50000
+      AUTO_TRADE=true
+    """
+    if os.environ.get("AUTO_TRADE", "").lower() != "true":
+        print("[AutoTrade] Disabled. Set AUTO_TRADE=true to enable.")
+        return
+
+    try:
+        from alpaca_trader import AlpacaTrader
+        trader = AlpacaTrader()
+
+        if not trader.is_configured:
+            print("[AutoTrade] Alpaca API keys not set. Skipping.")
+            return
+
+        # Only auto-deploy if portfolio is empty (first run)
+        if not trader.portfolio_is_empty():
+            print("[AutoTrade] Portfolio already has positions. Skipping auto-deploy.")
+            print("[AutoTrade] Rebalancing happens quarterly via /api/trading/execute or scheduler.")
+            return
+
+        capital_str = os.environ.get("DEPLOY_CAPITAL", "")
+        if not capital_str:
+            print("[AutoTrade] DEPLOY_CAPITAL not set. Skipping.")
+            return
+
+        capital = float(capital_str)
+        weights = {h["ticker"]: h["weight"] for h in TOP_15}
+
+        print(f"[AutoTrade] Empty portfolio detected. Deploying ${capital:,.2f} into {len(weights)} positions...")
+        result = trader.deploy_initial_portfolio(weights, capital=capital, dry_run=False)
+
+        executed = result.get("executed", [])
+        errors = result.get("errors", [])
+        print(f"[AutoTrade] Deployed: {len(executed)} orders executed, {len(errors)} errors")
+
+        if errors:
+            for err in errors:
+                print(f"[AutoTrade] ERROR: {err['symbol']} - {err['error']}")
+
+    except Exception as e:
+        print(f"[AutoTrade] Startup deploy failed: {e}")
+
+
+# Run auto-deploy check (non-blocking — errors won't crash the app)
+_auto_deploy_on_startup()
 
 
 if __name__ == "__main__":
