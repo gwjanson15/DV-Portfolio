@@ -449,21 +449,57 @@ def trading_status():
     try:
         from alpaca_trader import AlpacaTrader
         trader = AlpacaTrader()
+
+        # Show which env vars are configured (without revealing values)
+        env_check = {
+            "ALPACA_API_KEY": bool(os.environ.get("ALPACA_API_KEY")),
+            "ALPACA_SECRET_KEY": bool(os.environ.get("ALPACA_SECRET_KEY")),
+            "ALPACA_BASE_URL": os.environ.get("ALPACA_BASE_URL", "not set (defaults to paper)"),
+            "DEPLOY_CAPITAL": os.environ.get("DEPLOY_CAPITAL", "not set"),
+            "AUTO_TRADE": os.environ.get("AUTO_TRADE", "not set"),
+        }
+
         if not trader.is_configured:
-            return jsonify({"connected": False, "reason": "API keys not set"})
+            return jsonify({
+                "connected": False,
+                "reason": "API keys not set — add ALPACA_API_KEY and ALPACA_SECRET_KEY in Railway env vars",
+                "env_check": env_check,
+            })
+
         account = trader.get_account()
         positions = trader.get_positions()
         return jsonify({
             "connected": True,
             "mode": "paper" if "paper" in trader.base_url else "live",
+            "base_url": trader.base_url,
+            "account_status": account.get("status"),
             "equity": float(account.get("equity", 0)),
             "buying_power": float(account.get("buying_power", 0)),
+            "cash": float(account.get("cash", 0)),
             "positions_count": len(positions),
             "portfolio_empty": len(positions) == 0,
             "market_open": trader.is_market_open(),
+            "env_check": env_check,
+            "positions": [
+                {
+                    "symbol": p["symbol"],
+                    "qty": p["qty"],
+                    "market_value": p["market_value"],
+                    "side": p["side"],
+                }
+                for p in positions
+            ] if positions else [],
         })
     except Exception as e:
-        return jsonify({"connected": False, "reason": str(e)}), 500
+        return jsonify({
+            "connected": False,
+            "reason": str(e),
+            "env_check": {
+                "ALPACA_API_KEY": bool(os.environ.get("ALPACA_API_KEY")),
+                "ALPACA_SECRET_KEY": bool(os.environ.get("ALPACA_SECRET_KEY")),
+                "ALPACA_BASE_URL": os.environ.get("ALPACA_BASE_URL", "not set"),
+            },
+        }), 500
 
 
 @app.route("/api/trading/preview", methods=["POST"])

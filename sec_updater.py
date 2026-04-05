@@ -153,7 +153,10 @@ def parse_infotable_xml(xml_text):
     for entry in root.findall(".//infoTable"):
         name = entry.findtext("nameOfIssuer", "").strip()
         cusip = entry.findtext("cusip", "").strip()
-        value_k = int(entry.findtext("value", "0"))
+        # SEC 13F value is in whole dollars since Jan 2023
+        # Store as value_k (thousands) to match our hardcoded data format
+        value_dollars = int(entry.findtext("value", "0"))
+        value_k = round(value_dollars / 1000)
         shares = int(entry.findtext(".//sshPrnamt", "0"))
         put_call = entry.findtext("putCall", "").strip()
 
