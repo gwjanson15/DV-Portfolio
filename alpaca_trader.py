@@ -133,13 +133,73 @@ class AlpacaTrader:
             "time_in_force": tif,
         })
 
-    def get_orders(self, status="open"):
-        """List orders by status."""
-        return self._get(f"/v2/orders?status={status}")
+    def get_orders(self, status="all", limit=100):
+        """List orders by status. Status can be: open, closed, all."""
+        return self._get(f"/v2/orders?status={status}&limit={limit}&direction=desc")
+
+    def get_open_orders(self):
+        """Get all currently open/pending orders."""
+        return self._get("/v2/orders?status=open")
+
+    def get_recent_orders(self, limit=50):
+        """Get recent orders of all statuses."""
+        return self._get(f"/v2/orders?status=all&limit={limit}&direction=desc")
 
     def cancel_all_orders(self):
         """Cancel all open orders."""
         return self._delete("/v2/orders")
+
+    def cancel_order(self, order_id):
+        """Cancel a specific order by ID."""
+        return self._delete(f"/v2/orders/{order_id}")
+
+    def get_order_summary(self):
+        """
+        Get a summary of all recent orders grouped by status.
+        Useful for diagnosing what happened after a deploy.
+        """
+        orders = self.get_recent_orders(limit=100)
+        summary = {
+            "total": len(orders),
+            "filled": [],
+            "cancelled": [],
+            "pending": [],
+            "rejected": [],
+            "other": [],
+        }
+        for o in orders:
+            status = o.get("status", "unknown")
+            entry = {
+                "id": o.get("id"),
+                "symbol": o.get("symbol"),
+                "side": o.get("side"),
+                "notional": o.get("notional"),
+                "qty": o.get("qty"),
+                "filled_qty": o.get("filled_qty"),
+                "status": status,
+                "submitted_at": o.get("submitted_at"),
+                "filled_at": o.get("filled_at"),
+                "cancelled_at": o.get("cancelled_at"),
+                "type": o.get("type"),
+            }
+            if status == "filled":
+                summary["filled"].append(entry)
+            elif status in ("canceled", "cancelled"):
+                summary["cancelled"].append(entry)
+            elif status in ("new", "accepted", "pending_new", "partially_filled"):
+                summary["pending"].append(entry)
+            elif status == "rejected":
+                summary["rejected"].append(entry)
+            else:
+                summary["other"].append(entry)
+
+        summary["counts"] = {
+            "filled": len(summary["filled"]),
+            "cancelled": len(summary["cancelled"]),
+            "pending": len(summary["pending"]),
+            "rejected": len(summary["rejected"]),
+        }
+        return summary
 
     # ── Portfolio Status ──────────────────────────────────────
 

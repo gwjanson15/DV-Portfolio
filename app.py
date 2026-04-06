@@ -564,6 +564,81 @@ def trading_positions():
         return jsonify({"error": str(e)}), 500
 
 
+@app.route("/api/trading/orders")
+def trading_orders():
+    """
+    Check order status — shows filled, cancelled, pending, and rejected orders.
+    Use this to confirm trades went through or diagnose failures.
+    """
+    try:
+        from alpaca_trader import AlpacaTrader
+        trader = AlpacaTrader()
+        if not trader.is_configured:
+            return jsonify({"error": "Alpaca not configured"}), 400
+        return jsonify(trader.get_order_summary())
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/trading/cancel-all", methods=["POST"])
+def trading_cancel_all():
+    """Cancel all open/pending orders."""
+    try:
+        from alpaca_trader import AlpacaTrader
+        trader = AlpacaTrader()
+        if not trader.is_configured:
+            return jsonify({"error": "Alpaca not configured"}), 400
+        result = trader.cancel_all_orders()
+        return jsonify({"status": "cancelled", "result": result})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/trading/deploy-now", methods=["POST"])
+def trading_deploy_now():
+    """
+    Force deploy the portfolio right now, regardless of prior state.
+    Cancels any open orders first, then deploys fresh.
+    Body: {"capital": 50000, "confirm": true}
+    """
+    try:
+        from alpaca_trader import AlpacaTrader
+        trader = AlpacaTrader()
+        if not trader.is_configured:
+            return jsonify({"error": "Alpaca not configured"}), 400
+
+        data = request.get_json(silent=True) or {}
+        if not data.get("confirm"):
+            return jsonify({"error": "Set confirm: true to execute"}), 400
+
+        capital = data.get("capital") or float(os.environ.get("DEPLOY_CAPITAL", 0)) or None
+        if not capital:
+            return jsonify({"error": "No capital specified — pass capital in body or set DEPLOY_CAPITAL env var"}), 400
+
+        # Step 1: Cancel any open orders
+        open_orders = trader.get_open_orders()
+        if open_orders:
+            trader.cancel_all_orders()
+            import time
+            time.sleep(2)  # Wait for cancellations to process
+
+        # Step 2: Check current positions
+        positions = trader.get_positions()
+        weights = {h["ticker"]: h["weight"] for h in TOP_15}
+
+        if len(positions) == 0:
+            # Empty portfolio — full initial deploy
+            result = trader.deploy_initial_portfolio(weights, capital=capital, dry_run=False)
+        else:
+            # Has positions — rebalance to targets
+            result = trader.execute_rebalance(weights, capital=capital, dry_run=False)
+
+        result["cancelled_orders"] = len(open_orders)
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 # ── Auto-Deploy on Startup ───────────────────────────────────
 
 def _auto_deploy_on_startup():
