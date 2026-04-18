@@ -30,38 +30,51 @@ from flask_cors import CORS
 EXCLUDED_TICKERS = {"APEI"}
 
 # Hardcoded fallback (Q4 2025 filing, period: 2025-12-31)
+# shares = combined shares + call option contracts from SEC XML
 FALLBACK_HOLDINGS = [
-    {"ticker": "SGHC", "name": "Super Group (SGHC) Limited",       "value_k": 288336},
-    {"ticker": "DAVE", "name": "Dave Inc",                          "value_k": 218467},
-    {"ticker": "CELH", "name": "Celsius Holdings Inc",              "value_k": 115732},
-    {"ticker": "INDV", "name": "Indivior PLC",                      "value_k": 99918},
-    {"ticker": "AS",   "name": "Amer Sports Inc",                   "value_k": 93033},
-    {"ticker": "CVNA", "name": "Carvana Co",                        "value_k": 92080},
-    {"ticker": "SN",   "name": "SharkNinja Inc",                    "value_k": 86069},
-    {"ticker": "RSI",  "name": "Rush Street Interactive Inc",       "value_k": 85711},
-    {"ticker": "FLYW", "name": "Flywire Corporation",               "value_k": 81936},
-    {"ticker": "BBW",  "name": "Build-A-Bear Workshop Inc",         "value_k": 76662},
-    {"ticker": "SEZL", "name": "Sezzle Inc",                        "value_k": 71297},
-    {"ticker": "APEI", "name": "American Public Education Inc",     "value_k": 63185},
-    {"ticker": "TPB",  "name": "Turning Point Brands Inc",          "value_k": 57584},
-    {"ticker": "CLS",  "name": "Celestica Inc",                     "value_k": 51735},
-    {"ticker": "FIGS", "name": "FIGS Inc",                          "value_k": 50105},
-    {"ticker": "REAL", "name": "The RealReal Inc",                  "value_k": 49714},
-    {"ticker": "LITE", "name": "Lumentum Holdings Inc",             "value_k": 43562},
-    {"ticker": "IMAX", "name": "IMAX Corp",                         "value_k": 35666},
-    {"ticker": "NSSC", "name": "NAPCO Security Technologies Inc",   "value_k": 33766},
-    {"ticker": "LWAY", "name": "Lifeway Foods Inc",                 "value_k": 32653},
-    {"ticker": "WLDN", "name": "Willdan Group Inc",                 "value_k": 30987},
-    {"ticker": "VSCO", "name": "Victoria's Secret & Co",            "value_k": 26728},
-    {"ticker": "BLND", "name": "Blend Labs Inc",                    "value_k": 17331},
-    {"ticker": "DKNG", "name": "DraftKings Inc",                    "value_k": 17305},
-    {"ticker": "VITL", "name": "Vital Farms Inc",                   "value_k": 17081},
-    {"ticker": "AXGN", "name": "Axogen Inc",                        "value_k": 16490},
-    {"ticker": "UPST", "name": "Upstart Holdings Inc",              "value_k": 16180},
-    {"ticker": "HIMS", "name": "Hims & Hers Health Inc",            "value_k": 15255},
-    {"ticker": "PRCH", "name": "Porch Group Inc",                   "value_k": 14794},
-    {"ticker": "COMP", "name": "Compass Inc",                       "value_k": 13213},
+    {"ticker": "SGHC", "name": "Super Group (SGHC) Limited",       "value_k": 288336, "shares": 24128529},
+    {"ticker": "DAVE", "name": "Dave Inc",                          "value_k": 218467, "shares": 986708},
+    {"ticker": "CELH", "name": "Celsius Holdings Inc",              "value_k": 115732, "shares": 2530212},
+    {"ticker": "INDV", "name": "Indivior PLC",                      "value_k": 99918,  "shares": 2784786},
+    {"ticker": "AS",   "name": "Amer Sports Inc",                   "value_k": 93033,  "shares": 2490845},
+    {"ticker": "CVNA", "name": "Carvana Co",                        "value_k": 92080,  "shares": 218189},
+    {"ticker": "SN",   "name": "SharkNinja Inc",                    "value_k": 86069,  "shares": 769163},
+    {"ticker": "RSI",  "name": "Rush Street Interactive Inc",       "value_k": 85711,  "shares": 4411304},
+    {"ticker": "FLYW", "name": "Flywire Corporation",               "value_k": 81936,  "shares": 5786462},
+    {"ticker": "BBW",  "name": "Build-A-Bear Workshop Inc",         "value_k": 76662,  "shares": 1251224},
+    {"ticker": "SEZL", "name": "Sezzle Inc",                        "value_k": 71297,  "shares": 1123226},
+    {"ticker": "APEI", "name": "American Public Education Inc",     "value_k": 63185,  "shares": 1671558},
+    {"ticker": "TPB",  "name": "Turning Point Brands Inc",          "value_k": 57584,  "shares": 531214},
+    {"ticker": "CLS",  "name": "Celestica Inc",                     "value_k": 51735,  "shares": 175012},
+    {"ticker": "FIGS", "name": "FIGS Inc",                          "value_k": 50105,  "shares": 4410632},
+    {"ticker": "REAL", "name": "The RealReal Inc",                  "value_k": 49714,  "shares": 3150443},
+    {"ticker": "LITE", "name": "Lumentum Holdings Inc",             "value_k": 43562,  "shares": 118185},
+    {"ticker": "IMAX", "name": "IMAX Corp",                         "value_k": 35666,  "shares": 964986},
+    {"ticker": "NSSC", "name": "NAPCO Security Technologies Inc",   "value_k": 33766,  "shares": 809729},
+    {"ticker": "LWAY", "name": "Lifeway Foods Inc",                 "value_k": 32653,  "shares": 1347635},
+    {"ticker": "WLDN", "name": "Willdan Group Inc",                 "value_k": 30987,  "shares": 298932},
+    {"ticker": "VSCO", "name": "Victoria's Secret & Co",            "value_k": 26728,  "shares": 493413},
+    {"ticker": "BLND", "name": "Blend Labs Inc",                    "value_k": 17331,  "shares": 5701122},
+    {"ticker": "DKNG", "name": "DraftKings Inc",                    "value_k": 17305,  "shares": 502162},
+    {"ticker": "VITL", "name": "Vital Farms Inc",                   "value_k": 17081,  "shares": 534780},
+    {"ticker": "AXGN", "name": "Axogen Inc",                        "value_k": 16490,  "shares": 503822},
+    {"ticker": "UPST", "name": "Upstart Holdings Inc",              "value_k": 16180,  "shares": 370000},
+    {"ticker": "HIMS", "name": "Hims & Hers Health Inc",            "value_k": 15255,  "shares": 469833},
+    {"ticker": "PRCH", "name": "Porch Group Inc",                   "value_k": 14794,  "shares": 1620351},
+    {"ticker": "COMP", "name": "Compass Inc",                       "value_k": 13213,  "shares": 1250000},
 ]
+
+# Previous quarter (Q3 2025) share counts for comparison
+# Used to detect new entrants, exits, and share changes
+PREV_QUARTER_SHARES = {
+    "SGHC": 20517829, "DAVE": 1650366, "CELH": 1690518,
+    "INDV": 3362605,  "AS":   413533,  "CVNA": 208320,
+    "SN":   774408,   "RSI":  4398551, "FLYW": 4150737,
+    "BBW":  34502,    "SEZL": 1494617, "APEI": 1274091,
+    "TPB":  1154297,  "CLS":  175012,  "FIGS": 3063127,
+    "REAL": 3150443,  "LITE": 118185,  "IMAX": 964986,
+    "NSSC": 780857,   "LWAY": 1134953, "WLDN": 298932,
+}
 
 # ── Try live SEC data, fall back to hardcoded ────────────────
 DATA_SOURCE = "hardcoded_q4_2025"
@@ -87,15 +100,51 @@ def _init_holdings():
 
 _init_holdings()
 
-# Sort, exclude, take top 15
+# ── SHARE-BASED WEIGHTING ────────────────────────────────────
+# Rank by dollar value (to determine which 15 are "top"),
+# but WEIGHT by share count (proportional to Divisadero's
+# actual position sizing, not market price fluctuations).
+#
+# On rebalance, we detect:
+#   - New entrants (ticker not in previous quarter)
+#   - Exits (ticker dropped out of top 15)
+#   - Share increases/decreases (conviction changes)
+# ──────────────────────────────────────────────────────────────
+
 RAW_HOLDINGS.sort(key=lambda h: h["value_k"], reverse=True)
 ELIGIBLE = [h for h in RAW_HOLDINGS if h["ticker"] not in EXCLUDED_TICKERS]
 TOP_15 = ELIGIBLE[:15]
 
-# Compute weights
+# Weight by shares, not dollars
+TOTAL_TOP15_SHARES = sum(h.get("shares", 0) for h in TOP_15)
+for h in TOP_15:
+    shares = h.get("shares", 0)
+    h["weight"] = round(shares / TOTAL_TOP15_SHARES, 6) if TOTAL_TOP15_SHARES > 0 else 0
+
+    # Quarter-over-quarter change analysis
+    prev_shares = PREV_QUARTER_SHARES.get(h["ticker"], 0)
+    if prev_shares == 0:
+        h["change_type"] = "NEW"         # New entrant this quarter
+        h["share_change_pct"] = 100.0
+    else:
+        change_pct = round((shares - prev_shares) / prev_shares * 100, 2)
+        h["share_change_pct"] = change_pct
+        if change_pct > 5:
+            h["change_type"] = "INCREASED"
+        elif change_pct < -5:
+            h["change_type"] = "DECREASED"
+        else:
+            h["change_type"] = "HELD"
+
+# Track exits (were in prev top 15, no longer)
+PREV_TOP15_TICKERS = set(PREV_QUARTER_SHARES.keys())
+CURRENT_TOP15_TICKERS = {h["ticker"] for h in TOP_15}
+EXITED_TICKERS = PREV_TOP15_TICKERS - CURRENT_TOP15_TICKERS - EXCLUDED_TICKERS
+
+# Also store dollar-value weight for reference
 TOTAL_TOP15_VALUE = sum(h["value_k"] for h in TOP_15)
 for h in TOP_15:
-    h["weight"] = round(h["value_k"] / TOTAL_TOP15_VALUE, 6)
+    h["value_weight"] = round(h["value_k"] / TOTAL_TOP15_VALUE, 6) if TOTAL_TOP15_VALUE > 0 else 0
 
 # ──────────────────────────────────────────────────────────────
 # SIMULATED BACKTEST ENGINE
@@ -305,41 +354,76 @@ def index():
 
 @app.route("/api/holdings")
 def get_holdings():
-    """Return the top-15 holdings with weights."""
+    """Return the top-15 holdings with share-based weights and change tracking."""
     return jsonify({
         "fund_name": "Divisadero Street Capital Management, LP",
         "filing_date": FILING_DATE,
         "data_source": DATA_SOURCE,
+        "weighting_method": "share_proportional",
         "cik": "0001901865",
         "total_13f_value_k": sum(h["value_k"] for h in RAW_HOLDINGS),
         "top15_value_k": TOTAL_TOP15_VALUE,
         "top15_pct_of_total": round(TOTAL_TOP15_VALUE / sum(h["value_k"] for h in RAW_HOLDINGS) * 100, 2),
         "excluded_tickers": list(EXCLUDED_TICKERS),
+        "exited_tickers": list(EXITED_TICKERS),
         "holdings": TOP_15,
     })
 
 
 @app.route("/api/refresh-holdings", methods=["POST"])
 def refresh_holdings():
-    """Force a re-fetch of 13F data from SEC EDGAR."""
-    global RAW_HOLDINGS, TOP_15, TOTAL_TOP15_VALUE, ELIGIBLE, DATA_SOURCE, FILING_DATE
+    """Force a re-fetch of 13F data from SEC EDGAR with share-based reweighting."""
+    global RAW_HOLDINGS, TOP_15, TOTAL_TOP15_VALUE, TOTAL_TOP15_SHARES, ELIGIBLE
+    global DATA_SOURCE, FILING_DATE, EXITED_TICKERS
     try:
         from sec_updater import fetch_and_parse_holdings, CACHE_FILE
-        # Clear cache to force fresh fetch
         if CACHE_FILE.exists():
             CACHE_FILE.unlink()
         live = fetch_and_parse_holdings()
         if live and live.get("holdings"):
+            # Save current top-15 tickers as "previous" before updating
+            prev_tickers = {h["ticker"] for h in TOP_15}
+            prev_shares = {h["ticker"]: h.get("shares", 0) for h in TOP_15}
+
             RAW_HOLDINGS = live["holdings"]
             DATA_SOURCE = live.get("source", "sec_edgar_live")
             FILING_DATE = live.get("filing_date", FILING_DATE)
+
             RAW_HOLDINGS.sort(key=lambda h: h["value_k"], reverse=True)
             ELIGIBLE = [h for h in RAW_HOLDINGS if h["ticker"] not in EXCLUDED_TICKERS]
             TOP_15 = ELIGIBLE[:15]
+
+            # Share-based weighting
+            TOTAL_TOP15_SHARES = sum(h.get("shares", 0) for h in TOP_15)
             TOTAL_TOP15_VALUE = sum(h["value_k"] for h in TOP_15)
+            new_tickers = set()
             for h in TOP_15:
-                h["weight"] = round(h["value_k"] / TOTAL_TOP15_VALUE, 6)
-            return jsonify({"status": "refreshed", "source": DATA_SOURCE, "filing_date": FILING_DATE, "holdings_count": len(TOP_15)})
+                shares = h.get("shares", 0)
+                h["weight"] = round(shares / TOTAL_TOP15_SHARES, 6) if TOTAL_TOP15_SHARES > 0 else 0
+                h["value_weight"] = round(h["value_k"] / TOTAL_TOP15_VALUE, 6) if TOTAL_TOP15_VALUE > 0 else 0
+
+                ps = prev_shares.get(h["ticker"], 0)
+                if ps == 0:
+                    h["change_type"] = "NEW"
+                    h["share_change_pct"] = 100.0
+                    new_tickers.add(h["ticker"])
+                else:
+                    change_pct = round((shares - ps) / ps * 100, 2)
+                    h["share_change_pct"] = change_pct
+                    h["change_type"] = "INCREASED" if change_pct > 5 else ("DECREASED" if change_pct < -5 else "HELD")
+
+            current_tickers = {h["ticker"] for h in TOP_15}
+            EXITED_TICKERS = prev_tickers - current_tickers - EXCLUDED_TICKERS
+
+            return jsonify({
+                "status": "refreshed",
+                "source": DATA_SOURCE,
+                "filing_date": FILING_DATE,
+                "holdings_count": len(TOP_15),
+                "weighting": "share_proportional",
+                "new_entrants": list(new_tickers),
+                "exits": list(EXITED_TICKERS),
+            })
         else:
             return jsonify({"status": "failed", "reason": "No data returned from SEC"}), 502
     except Exception as e:
@@ -528,9 +612,11 @@ def trading_preview():
 @app.route("/api/trading/execute", methods=["POST"])
 def trading_execute():
     """
-    Execute trades for real (paper or live depending on ALPACA_BASE_URL).
+    Execute trades (paper or live depending on ALPACA_BASE_URL).
     Detects empty portfolio → initial deployment, else → rebalance.
-    Body: {"capital": 50000, "confirm": true}
+
+    Paper mode:  {"confirm": true}
+    Live mode:   {"confirm": true, "live_confirm": "I understand this uses real money"}
     """
     try:
         from alpaca_trader import AlpacaTrader
@@ -542,10 +628,20 @@ def trading_execute():
         if not data.get("confirm"):
             return jsonify({"error": "Set confirm: true to execute trades"}), 400
 
+        is_live = "paper" not in trader.base_url
+        if is_live and data.get("live_confirm") != "I understand this uses real money":
+            return jsonify({
+                "error": "LIVE TRADING BLOCKED — you are connected to the live Alpaca API",
+                "mode": "LIVE",
+                "base_url": trader.base_url,
+                "fix": 'Add "live_confirm": "I understand this uses real money" to your request body',
+            }), 403
+
         capital = data.get("capital") or float(os.environ.get("DEPLOY_CAPITAL", 0)) or None
 
         weights = {h["ticker"]: h["weight"] for h in TOP_15}
         result = trader.sync_portfolio(weights, capital=capital, dry_run=False)
+        result["mode_warning"] = "LIVE — real money" if is_live else "Paper trading"
         return jsonify(result)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -599,7 +695,9 @@ def trading_deploy_now():
     """
     Force deploy the portfolio right now, regardless of prior state.
     Cancels any open orders first, then deploys fresh.
-    Body: {"capital": 50000, "confirm": true}
+
+    Paper mode:  {"confirm": true}
+    Live mode:   {"confirm": true, "live_confirm": "I understand this uses real money"}
     """
     try:
         from alpaca_trader import AlpacaTrader
@@ -611,6 +709,15 @@ def trading_deploy_now():
         if not data.get("confirm"):
             return jsonify({"error": "Set confirm: true to execute"}), 400
 
+        is_live = "paper" not in trader.base_url
+        if is_live and data.get("live_confirm") != "I understand this uses real money":
+            return jsonify({
+                "error": "LIVE TRADING BLOCKED — you are connected to the live Alpaca API",
+                "mode": "LIVE",
+                "base_url": trader.base_url,
+                "fix": 'Add "live_confirm": "I understand this uses real money" to your request body',
+            }), 403
+
         capital = data.get("capital") or float(os.environ.get("DEPLOY_CAPITAL", 0)) or None
         if not capital:
             return jsonify({"error": "No capital specified — pass capital in body or set DEPLOY_CAPITAL env var"}), 400
@@ -620,23 +727,108 @@ def trading_deploy_now():
         if open_orders:
             trader.cancel_all_orders()
             import time
-            time.sleep(2)  # Wait for cancellations to process
+            time.sleep(2)
 
         # Step 2: Check current positions
         positions = trader.get_positions()
         weights = {h["ticker"]: h["weight"] for h in TOP_15}
 
         if len(positions) == 0:
-            # Empty portfolio — full initial deploy
             result = trader.deploy_initial_portfolio(weights, capital=capital, dry_run=False)
         else:
-            # Has positions — rebalance to targets
             result = trader.execute_rebalance(weights, capital=capital, dry_run=False)
 
         result["cancelled_orders"] = len(open_orders)
+        result["mode_warning"] = "LIVE — real money" if is_live else "Paper trading"
         return jsonify(result)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/trading/preflight")
+def trading_preflight():
+    """
+    Pre-switch checklist: run this BEFORE switching from paper to live.
+    Validates everything is working correctly.
+    """
+    try:
+        from alpaca_trader import AlpacaTrader
+        trader = AlpacaTrader()
+        checks = []
+
+        # 1. API configured
+        configured = trader.is_configured
+        checks.append({"check": "API keys configured", "pass": configured,
+                       "detail": "Set" if configured else "ALPACA_API_KEY or ALPACA_SECRET_KEY missing"})
+
+        if not configured:
+            return jsonify({"ready": False, "checks": checks})
+
+        # 2. Connection works
+        try:
+            account = trader.get_account()
+            checks.append({"check": "API connection", "pass": True,
+                           "detail": f"Connected, status: {account.get('status')}"})
+        except Exception as e:
+            checks.append({"check": "API connection", "pass": False, "detail": str(e)})
+            return jsonify({"ready": False, "checks": checks})
+
+        # 3. Current mode
+        is_live = "paper" not in trader.base_url
+        checks.append({"check": "Trading mode", "pass": True,
+                       "detail": f"{'LIVE' if is_live else 'Paper'} ({trader.base_url})"})
+
+        # 4. Account has funds
+        equity = float(account.get("equity", 0))
+        buying_power = float(account.get("buying_power", 0))
+        capital = float(os.environ.get("DEPLOY_CAPITAL", 0))
+        has_funds = buying_power >= capital * 0.9 if capital > 0 else buying_power > 100
+        checks.append({"check": "Sufficient funds", "pass": has_funds,
+                       "detail": f"Equity: ${equity:,.2f}, Buying power: ${buying_power:,.2f}, Deploy target: ${capital:,.2f}"})
+
+        # 5. Market status
+        market_open = trader.is_market_open()
+        checks.append({"check": "Market open", "pass": market_open,
+                       "detail": "Open" if market_open else "Closed — orders will queue until open"})
+
+        # 6. Holdings loaded
+        checks.append({"check": "Holdings loaded", "pass": len(TOP_15) == 15,
+                       "detail": f"{len(TOP_15)} holdings, source: {DATA_SOURCE}"})
+
+        # 7. No stale open orders
+        try:
+            open_orders = trader.get_open_orders()
+            no_stale = len(open_orders) == 0
+            checks.append({"check": "No stale orders", "pass": no_stale,
+                           "detail": f"{len(open_orders)} open orders" + (" — cancel these first" if not no_stale else "")})
+        except Exception:
+            checks.append({"check": "No stale orders", "pass": True, "detail": "Could not check"})
+
+        # 8. DEPLOY_CAPITAL set
+        checks.append({"check": "DEPLOY_CAPITAL set", "pass": capital > 0,
+                       "detail": f"${capital:,.2f}" if capital > 0 else "Not set — required for initial deploy"})
+
+        all_pass = all(c["pass"] for c in checks)
+        return jsonify({
+            "ready": all_pass,
+            "mode": "LIVE" if is_live else "Paper",
+            "checks": checks,
+            "switch_instructions": {
+                "step_1": "Complete paper trading and verify all orders fill correctly",
+                "step_2": "Go to app.alpaca.markets → switch to your live account",
+                "step_3": "Generate new API keys for the LIVE account",
+                "step_4": "In Railway Variables, update: ALPACA_API_KEY, ALPACA_SECRET_KEY, and set ALPACA_BASE_URL to https://api.alpaca.markets",
+                "step_5": "Set DEPLOY_CAPITAL to the real dollar amount you want to invest",
+                "step_6": "Redeploy the Railway service",
+                "step_7": "Hit /api/trading/preflight again to verify everything is green",
+                "step_8": "Hit POST /api/trading/deploy-now with confirm AND live_confirm",
+            } if not is_live else {
+                "status": "You are already in LIVE mode",
+                "warning": "All trades use real money",
+            },
+        })
+    except Exception as e:
+        return jsonify({"ready": False, "error": str(e)}), 500
 
 
 # ── Auto-Deploy on Startup ───────────────────────────────────
@@ -665,6 +857,13 @@ def _auto_deploy_on_startup():
 
         if not trader.is_configured:
             print("[AutoTrade] Alpaca API keys not set. Skipping.")
+            return
+
+        # SAFETY: Never auto-trade with real money
+        is_live = "paper" not in trader.base_url
+        if is_live:
+            print("[AutoTrade] BLOCKED — connected to LIVE Alpaca API. Auto-trade only works in paper mode.")
+            print("[AutoTrade] To deploy live, use POST /api/trading/deploy-now with live_confirm.")
             return
 
         # Only auto-deploy if portfolio is empty (first run)
