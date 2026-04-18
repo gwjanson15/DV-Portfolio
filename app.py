@@ -100,31 +100,34 @@ def _init_holdings():
 
 _init_holdings()
 
-# ── SHARE-BASED WEIGHTING ────────────────────────────────────
-# Rank by dollar value (to determine which 15 are "top"),
-# but WEIGHT by share count (proportional to Divisadero's
-# actual position sizing, not market price fluctuations).
+# ── DOLLAR-VALUE WEIGHTING ───────────────────────────────────
+# Weight by 13F dollar value (market value of positions).
+# This reflects the fund's actual capital allocation and
+# naturally overweights high-conviction, large positions.
 #
-# On rebalance, we detect:
-#   - New entrants (ticker not in previous quarter)
-#   - Exits (ticker dropped out of top 15)
-#   - Share increases/decreases (conviction changes)
+# Rebalancing strategies (configurable via REBALANCE_STRATEGY env var):
+#   "quarterly"       — Fixed quarterly rebalance (default)
+#   "drift_band"      — Only rebalance when a position drifts >20% from target
+#   "momentum_tilt"   — Let winners ride: tighten bands on losers, widen on winners
+#   "new_filing_only" — Only rebalance when a new 13F is filed (detect via SEC)
 # ──────────────────────────────────────────────────────────────
+
+REBALANCE_STRATEGY = os.environ.get("REBALANCE_STRATEGY", "drift_band")
 
 RAW_HOLDINGS.sort(key=lambda h: h["value_k"], reverse=True)
 ELIGIBLE = [h for h in RAW_HOLDINGS if h["ticker"] not in EXCLUDED_TICKERS]
 TOP_15 = ELIGIBLE[:15]
 
-# Weight by shares, not dollars
-TOTAL_TOP15_SHARES = sum(h.get("shares", 0) for h in TOP_15)
+# Weight by dollar value
+TOTAL_TOP15_VALUE = sum(h["value_k"] for h in TOP_15)
 for h in TOP_15:
-    shares = h.get("shares", 0)
-    h["weight"] = round(shares / TOTAL_TOP15_SHARES, 6) if TOTAL_TOP15_SHARES > 0 else 0
+    h["weight"] = round(h["value_k"] / TOTAL_TOP15_VALUE, 6) if TOTAL_TOP15_VALUE > 0 else 0
 
-    # Quarter-over-quarter change analysis
+    # Quarter-over-quarter change analysis (still tracked for dashboard display)
+    shares = h.get("shares", 0)
     prev_shares = PREV_QUARTER_SHARES.get(h["ticker"], 0)
     if prev_shares == 0:
-        h["change_type"] = "NEW"         # New entrant this quarter
+        h["change_type"] = "NEW"
         h["share_change_pct"] = 100.0
     else:
         change_pct = round((shares - prev_shares) / prev_shares * 100, 2)
@@ -136,15 +139,98 @@ for h in TOP_15:
         else:
             h["change_type"] = "HELD"
 
-# Track exits (were in prev top 15, no longer)
+# Track exits
 PREV_TOP15_TICKERS = set(PREV_QUARTER_SHARES.keys())
 CURRENT_TOP15_TICKERS = {h["ticker"] for h in TOP_15}
 EXITED_TICKERS = PREV_TOP15_TICKERS - CURRENT_TOP15_TICKERS - EXCLUDED_TICKERS
 
-# Also store dollar-value weight for reference
-TOTAL_TOP15_VALUE = sum(h["value_k"] for h in TOP_15)
-for h in TOP_15:
-    h["value_weight"] = round(h["value_k"] / TOTAL_TOP15_VALUE, 6) if TOTAL_TOP15_VALUE > 0 else 0
+
+# ── REBALANCING STRATEGIES ───────────────────────────────────
+
+def should_rebalance_position(ticker, current_weight, target_weight, strategy=None):
+    """
+    Determine if a position needs rebalancing based on the active strategy.
+    Returns (should_trade: bool, reason: str)
+    """
+    strat = strategy or REBALANCE_STRATEGY
+    if target_weight == 0:
+        return (True, "EXIT — no longer in top 15")
+
+    drift = abs(current_weight - target_weight) / target_weight if target_weight > 0 else 0
+
+    if strat == "quarterly":
+        # Always rebalance everything on schedule
+        return (True, f"quarterly rebalance, drift {drift*100:.1f}%")
+
+    elif strat == "drift_band":
+        # Only trade if position drifts >20% from target weight
+        # E.g., target 10% → trade if below 8% or above 12%
+        BAND = 0.20
+        if drift > BAND:
+            return (True, f"drift {drift*100:.1f}% exceeds {BAND*100:.0f}% band")
+        return (False, f"drift {drift*100:.1f}% within {BAND*100:.0f}% band")
+
+    elif strat == "momentum_tilt":
+        # Asymmetric bands: let winners run, cut losers faster
+        # Winners (overweight) get a wider band (30%) — let them ride
+        # Losers (underweight) get a tighter band (10%) — buy dips faster
+        is_overweight = current_weight > target_weight
+        band = 0.30 if is_overweight else 0.10
+        if drift > band:
+            direction = "overweight" if is_overweight else "underweight"
+            return (True, f"{direction}, drift {drift*100:.1f}% exceeds {band*100:.0f}% band")
+        return (False, f"drift {drift*100:.1f}% within momentum band")
+
+    elif strat == "new_filing_only":
+        # Only rebalance to match new 13F weights — don't trade mid-quarter
+        # This means: always rebalance when called (caller decides timing)
+        return (True, f"new filing detected, drift {drift*100:.1f}%")
+
+    # Fallback: always rebalance
+    return (True, f"default, drift {drift*100:.1f}%")
+
+
+def calculate_smart_rebalance(current_positions, target_weights, total_value, strategy=None):
+    """
+    Calculate rebalance trades using the selected strategy.
+    Returns list of trades with reason for each.
+    """
+    strat = strategy or REBALANCE_STRATEGY
+    trades = []
+
+    # Current weights
+    current_weights = {}
+    for sym, val in current_positions.items():
+        current_weights[sym] = val / total_value if total_value > 0 else 0
+
+    # Check each target position
+    all_tickers = set(list(target_weights.keys()) + list(current_positions.keys()))
+    for ticker in all_tickers:
+        target_w = target_weights.get(ticker, 0)
+        current_w = current_weights.get(ticker, 0)
+        current_val = current_positions.get(ticker, 0)
+        target_val = total_value * target_w
+
+        should_trade, reason = should_rebalance_position(ticker, current_w, target_w, strat)
+
+        diff = target_val - current_val
+        if should_trade and abs(diff) >= 10:
+            trades.append({
+                "symbol": ticker,
+                "side": "buy" if diff > 0 else "sell",
+                "notional": round(abs(diff), 2),
+                "current_value": round(current_val, 2),
+                "target_value": round(target_val, 2),
+                "current_weight": round(current_w * 100, 2),
+                "target_weight": round(target_w * 100, 2),
+                "drift_pct": round(abs(current_w - target_w) / target_w * 100, 2) if target_w > 0 else 100,
+                "reason": reason,
+                "strategy": strat,
+            })
+
+    # Sort: sells first to free capital, then buys
+    trades.sort(key=lambda t: (0 if t["side"] == "sell" else 1, -t["notional"]))
+    return trades
 
 # ──────────────────────────────────────────────────────────────
 # SIMULATED BACKTEST ENGINE
@@ -354,12 +440,13 @@ def index():
 
 @app.route("/api/holdings")
 def get_holdings():
-    """Return the top-15 holdings with share-based weights and change tracking."""
+    """Return the top-15 holdings with dollar-value weights and change tracking."""
     return jsonify({
         "fund_name": "Divisadero Street Capital Management, LP",
         "filing_date": FILING_DATE,
         "data_source": DATA_SOURCE,
-        "weighting_method": "share_proportional",
+        "weighting_method": "dollar_value",
+        "rebalance_strategy": REBALANCE_STRATEGY,
         "cik": "0001901865",
         "total_13f_value_k": sum(h["value_k"] for h in RAW_HOLDINGS),
         "top15_value_k": TOTAL_TOP15_VALUE,
@@ -372,8 +459,8 @@ def get_holdings():
 
 @app.route("/api/refresh-holdings", methods=["POST"])
 def refresh_holdings():
-    """Force a re-fetch of 13F data from SEC EDGAR with share-based reweighting."""
-    global RAW_HOLDINGS, TOP_15, TOTAL_TOP15_VALUE, TOTAL_TOP15_SHARES, ELIGIBLE
+    """Force a re-fetch of 13F data from SEC EDGAR with dollar-value reweighting."""
+    global RAW_HOLDINGS, TOP_15, TOTAL_TOP15_VALUE, ELIGIBLE
     global DATA_SOURCE, FILING_DATE, EXITED_TICKERS
     try:
         from sec_updater import fetch_and_parse_holdings, CACHE_FILE
@@ -381,9 +468,7 @@ def refresh_holdings():
             CACHE_FILE.unlink()
         live = fetch_and_parse_holdings()
         if live and live.get("holdings"):
-            # Save current top-15 tickers as "previous" before updating
             prev_tickers = {h["ticker"] for h in TOP_15}
-            prev_shares = {h["ticker"]: h.get("shares", 0) for h in TOP_15}
 
             RAW_HOLDINGS = live["holdings"]
             DATA_SOURCE = live.get("source", "sec_edgar_live")
@@ -393,24 +478,14 @@ def refresh_holdings():
             ELIGIBLE = [h for h in RAW_HOLDINGS if h["ticker"] not in EXCLUDED_TICKERS]
             TOP_15 = ELIGIBLE[:15]
 
-            # Share-based weighting
-            TOTAL_TOP15_SHARES = sum(h.get("shares", 0) for h in TOP_15)
+            # Dollar-value weighting
             TOTAL_TOP15_VALUE = sum(h["value_k"] for h in TOP_15)
             new_tickers = set()
             for h in TOP_15:
-                shares = h.get("shares", 0)
-                h["weight"] = round(shares / TOTAL_TOP15_SHARES, 6) if TOTAL_TOP15_SHARES > 0 else 0
-                h["value_weight"] = round(h["value_k"] / TOTAL_TOP15_VALUE, 6) if TOTAL_TOP15_VALUE > 0 else 0
-
-                ps = prev_shares.get(h["ticker"], 0)
-                if ps == 0:
+                h["weight"] = round(h["value_k"] / TOTAL_TOP15_VALUE, 6) if TOTAL_TOP15_VALUE > 0 else 0
+                if h["ticker"] not in prev_tickers:
                     h["change_type"] = "NEW"
-                    h["share_change_pct"] = 100.0
                     new_tickers.add(h["ticker"])
-                else:
-                    change_pct = round((shares - ps) / ps * 100, 2)
-                    h["share_change_pct"] = change_pct
-                    h["change_type"] = "INCREASED" if change_pct > 5 else ("DECREASED" if change_pct < -5 else "HELD")
 
             current_tickers = {h["ticker"] for h in TOP_15}
             EXITED_TICKERS = prev_tickers - current_tickers - EXCLUDED_TICKERS
@@ -420,7 +495,8 @@ def refresh_holdings():
                 "source": DATA_SOURCE,
                 "filing_date": FILING_DATE,
                 "holdings_count": len(TOP_15),
-                "weighting": "share_proportional",
+                "weighting": "dollar_value",
+                "rebalance_strategy": REBALANCE_STRATEGY,
                 "new_entrants": list(new_tickers),
                 "exits": list(EXITED_TICKERS),
             })
@@ -522,6 +598,45 @@ def alpaca_config():
             "DEPLOY_CAPITAL (dollar amount to invest)",
         ],
         "rebalance_cron": "0 10 1 1,4,7,10 * (1st of Jan/Apr/Jul/Oct at 10am ET)",
+    })
+
+
+@app.route("/api/strategy")
+def strategy_info():
+    """Explain available rebalancing strategies and current selection."""
+    return jsonify({
+        "current_strategy": REBALANCE_STRATEGY,
+        "weighting": "dollar_value",
+        "set_via": "REBALANCE_STRATEGY env var in Railway",
+        "strategies": {
+            "quarterly": {
+                "description": "Fixed quarterly rebalance — trades every position back to target weights on schedule",
+                "pros": "Simple, predictable, matches 13F filing cadence",
+                "cons": "Over-trades when drift is small, sells winners too early",
+                "best_for": "Set-and-forget portfolios",
+            },
+            "drift_band": {
+                "description": "Only rebalance positions that drift >20% from target weight. Checked quarterly but only trades what's needed.",
+                "pros": "Fewer trades, lower turnover, lets small winners run, reduces transaction costs",
+                "cons": "May lag on large moves",
+                "best_for": "Reducing unnecessary trades while staying close to target (RECOMMENDED)",
+                "band": "20%",
+            },
+            "momentum_tilt": {
+                "description": "Asymmetric bands — winners get a 30% drift band (let them run), losers get a 10% band (buy dips faster)",
+                "pros": "Captures momentum, buys weakness aggressively, improves Sharpe ratio in trending markets",
+                "cons": "Can increase concentration in runaway winners, more complex",
+                "best_for": "High-conviction strategies in trending markets",
+                "winner_band": "30%",
+                "loser_band": "10%",
+            },
+            "new_filing_only": {
+                "description": "Only rebalance when a new 13F filing is detected from SEC EDGAR. Ignores drift between filings.",
+                "pros": "Lowest turnover, truly mirrors the fund's decisions, minimal trading costs",
+                "cons": "45-day lag after quarter-end, portfolio can drift significantly between filings",
+                "best_for": "Pure 13F mirroring with minimal intervention",
+            },
+        },
     })
 
 
