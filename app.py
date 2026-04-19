@@ -640,6 +640,86 @@ def strategy_info():
     })
 
 
+# ── Multi-Fund Endpoints ─────────────────────────────────────
+
+@app.route("/api/funds")
+def list_funds():
+    """List all available funds for lookalike portfolios."""
+    from funds import get_available_funds, FUNDS
+    available = get_available_funds()
+    active_key = os.environ.get("ACTIVE_FUND", "divisadero")
+    return jsonify({
+        "active_fund": active_key,
+        "funds": available,
+        "switch_instructions": "Set ACTIVE_FUND env var in Railway to switch (e.g., ACTIVE_FUND=lightstreet)",
+    })
+
+
+@app.route("/api/funds/<fund_key>/holdings")
+def fund_holdings(fund_key):
+    """Get holdings for any available fund."""
+    from funds import FUNDS
+    if fund_key not in FUNDS:
+        return jsonify({"error": f"Unknown fund '{fund_key}'", "available": list(FUNDS.keys())}), 404
+
+    fund = FUNDS[fund_key]
+    holdings = sorted(fund["holdings"], key=lambda h: h["value_k"], reverse=True)
+    excluded = fund.get("excluded_tickers", set())
+    eligible = [h for h in holdings if h["ticker"] not in excluded]
+    top_n = eligible[:fund.get("top_n", 15)]
+
+    total_value = sum(h["value_k"] for h in top_n)
+    for h in top_n:
+        h["weight"] = round(h["value_k"] / total_value, 6) if total_value > 0 else 0
+
+    total_all = sum(h["value_k"] for h in holdings)
+    return jsonify({
+        "fund_name": fund["name"],
+        "manager": fund["manager"],
+        "cik": fund["cik"],
+        "style": fund["style"],
+        "filing_period": fund.get("filing_period", ""),
+        "weighting_method": "dollar_value",
+        "total_13f_value_k": total_all,
+        "top_n_value_k": total_value,
+        "top_n_pct_of_total": round(total_value / total_all * 100, 2) if total_all > 0 else 0,
+        "excluded_tickers": list(excluded),
+        "holdings": top_n,
+    })
+
+
+@app.route("/api/funds/<fund_key>/allocate")
+def fund_allocate(fund_key):
+    """Calculate allocations for any fund given a capital amount."""
+    from funds import FUNDS
+    if fund_key not in FUNDS:
+        return jsonify({"error": f"Unknown fund '{fund_key}'"}), 404
+
+    capital = float(request.args.get("capital", 100000))
+    fund = FUNDS[fund_key]
+    holdings = sorted(fund["holdings"], key=lambda h: h["value_k"], reverse=True)
+    excluded = fund.get("excluded_tickers", set())
+    eligible = [h for h in holdings if h["ticker"] not in excluded]
+    top_n = eligible[:fund.get("top_n", 15)]
+
+    total_value = sum(h["value_k"] for h in top_n)
+    allocations = []
+    for h in top_n:
+        weight = h["value_k"] / total_value if total_value > 0 else 0
+        allocations.append({
+            "ticker": h["ticker"],
+            "name": h["name"],
+            "weight_pct": round(weight * 100, 2),
+            "dollar_allocation": round(capital * weight, 2),
+        })
+
+    return jsonify({
+        "fund": fund["name"],
+        "capital": capital,
+        "allocations": allocations,
+    })
+
+
 # ── Live Trading Endpoints ──────────────────────────────────
 
 @app.route("/api/trading/status")
